@@ -358,11 +358,15 @@ function detectMode(stress) {
   return { type: "3d" };
 }
 
+function mohrShearSignForPlane(plane) {
+  return plane === "xz" ? 1 : -1;
+}
+
 const examples = {
-  "2D XY": { sx: -80, sy: 50, sz: 0, txy: -25, tyz: 0, txz: 0 },
-  "2D XZ": { sx: 110, sy: 0, sz: -30, txy: 0, tyz: 0, txz: 40 },
-  "2D YZ": { sx: 0, sy: 85, sz: -10, txy: 0, tyz: 28, txz: 0 },
-  "Full 3D": { sx: 140, sy: 60, sz: -20, txy: 35, tyz: 20, txz: -15 },
+  "2D XY": { sx: 50, sy: -80, sz: 0, txy: -25, tyz: 0, txz: 0 },
+  "2D XZ": { sx: 0, sy: 110, sz: -30, txy: 0, tyz: 40, txz: 0 },
+  "2D YZ": { sx: 85, sy: 0, sz: -10, txy: 0, tyz: 0, txz: 28 },
+  "Full 3D": { sx: 60, sy: 140, sz: -20, txy: 35, tyz: -15, txz: 20 },
 };
 
 function Field({ label, value, onChange }) {
@@ -439,14 +443,14 @@ function ViewControls({ azim, elev, setAzim, setElev }) {
     <div className="space-y-4 rounded-2xl border bg-white p-4">
       <div>
         <div className="text-sm font-medium text-slate-700">3D coordinate view</div>
-        <div className="text-xs text-slate-500">Rotate the reference and rotated coordinate systems freely.</div>
+
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm text-slate-700">
           <span>Azimuth</span>
           <span>{formatAngle(azim)}</span>
         </div>
-        <input type="range" min="0" max="360" step="1" value={azim} onChange={(e) => setAzim(Number(e.target.value))} className="w-full" />
+        <input type="range" min="-90" max="90" step="1" value={azim} onChange={(e) => setAzim(Number(e.target.value))} className="w-full" />
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm text-slate-700">
@@ -455,7 +459,7 @@ function ViewControls({ azim, elev, setAzim, setElev }) {
         </div>
         <input type="range" min="-75" max="75" step="1" value={elev} onChange={(e) => setElev(Number(e.target.value))} className="w-full" />
       </div>
-      <Button variant="outline" className="rounded-2xl" onClick={() => { setAzim(28); setElev(22); }}>
+      <Button variant="outline" className="rounded-2xl" onClick={() => { setAzim(0); setElev(0); }}>
         Reset view
       </Button>
     </div>
@@ -530,17 +534,18 @@ function AxisFrame({ width, height, xmin, xmax, ymin, ymax, children }) {
   );
 }
 
-function TwoDMohrSVG({ labels, a, b, tau, thetaDeg }) {
+function TwoDMohrSVG({ plane, labels, a, b, tau, thetaDeg }) {
   const width = 1040;
   const height = 620;
 
+  const shearSign = mohrShearSignForPlane(plane);
   const center = (a + b) / 2;
   const radius = Math.hypot((a - b) / 2, tau);
-  const originalA = { x: a, y: tau, label: labels[0] };
-  const originalB = { x: b, y: -tau, label: labels[1] };
-  const transformed = transform2D(a, b, tau, thetaDeg * DEG);
-  const currentA = { x: transformed.sxp, y: transformed.txpyp, label: `${labels[0]}'` };
-  const currentB = { x: transformed.syp, y: -transformed.txpyp, label: `${labels[1]}'` };
+  const originalA = { x: a, y: shearSign * tau, label: labels[0] };
+  const originalB = { x: b, y: -shearSign * tau, label: labels[1] };
+  const transformed = transform2D(a, b, tau, -thetaDeg * DEG);
+  const currentA = { x: transformed.sxp, y: shearSign * transformed.txpyp, label: `${labels[0]}'` };
+  const currentB = { x: transformed.syp, y: -shearSign * transformed.txpyp, label: `${labels[1]}'` };
   const sigma1 = center + radius;
   const sigma2 = center - radius;
 
@@ -701,15 +706,29 @@ function ThreeDMohrSVG({ sigma1, sigma2, sigma3, thetaDeg }) {
   );
 }
 
-function TwoDStressElementSVG({ axisNames, originalState, rotatedState, thetaDeg }) {
+function TwoDStressElementSVG({ plane, axisNames, originalState, rotatedState, thetaDeg }) {
   const width = 1040;
   const height = 700;
 
   const renderPanel = (panelCx, panelCy, thetaLocalDeg, state, names, title, axisColor, useDynamicLengths = false) => {
     const half = 118;
     const theta = thetaLocalDeg * DEG;
-    const ux = [Math.cos(theta), -Math.sin(theta)];
-    const uy = [Math.sin(theta), Math.cos(theta)];
+
+    const baseAxes =
+      plane === "xy"
+        ? { e1: [1, 0], e2: [0, -1] }
+        : plane === "xz"
+          ? { e1: [1, 0], e2: [0, 1] }
+          : { e1: [0, -1], e2: [-1, 0] };
+
+    const ux = [
+      Math.cos(theta) * baseAxes.e1[0] - Math.sin(theta) * baseAxes.e2[0],
+      Math.cos(theta) * baseAxes.e1[1] - Math.sin(theta) * baseAxes.e2[1],
+    ];
+    const uy = [
+      Math.sin(theta) * baseAxes.e1[0] + Math.cos(theta) * baseAxes.e2[0],
+      Math.sin(theta) * baseAxes.e1[1] + Math.cos(theta) * baseAxes.e2[1],
+    ];
     const map = (lx, ly) => ({ x: panelCx + lx * ux[0] + ly * uy[0], y: panelCy + lx * ux[1] + ly * uy[1] });
     const corners = [map(-half, -half), map(half, -half), map(half, half), map(-half, half)];
 
@@ -808,14 +827,25 @@ function ThreeDStressElementSVG({ basisReference, basisRotated, tensorReference,
   const projectWorld = (v, cx, cy, drawScale) => {
     const a = viewAzim * DEG;
     const e = viewElev * DEG;
-    const x1 = Math.cos(a) * v[0] - Math.sin(a) * v[1];
-    const y1 = Math.sin(a) * v[0] + Math.cos(a) * v[1];
-    const z1 = v[2];
-    const y2 = Math.cos(e) * y1 - Math.sin(e) * z1;
-    const z2 = Math.sin(e) * y1 + Math.cos(e) * z1;
+
+    // Standard view target:
+    // local axis 0 -> y up on screen
+    // local axis 1 -> x coming out of the page
+    // local axis 2 -> z to the left
+    const out = v[1];
+    const up = v[0];
+    const left = v[2];
+
+    const outYaw = Math.cos(a) * out - Math.sin(a) * left;
+    const leftYaw = Math.sin(a) * out + Math.cos(a) * left;
+    const upYaw = up;
+
+    const upPitch = Math.cos(e) * upYaw - Math.sin(e) * leftYaw;
+    const leftPitch = Math.sin(e) * upYaw + Math.cos(e) * leftYaw;
+
     return {
-      x: cx + drawScale * (x1 + 0.28 * y2),
-      y: cy - drawScale * (z2 - 0.12 * y2),
+      x: cx + drawScale * (0.85 * outYaw - 0.95 * leftPitch),
+      y: cy + drawScale * (-1.0 * upPitch + 0.32 * outYaw),
     };
   };
 
@@ -845,7 +875,7 @@ function ThreeDStressElementSVG({ basisReference, basisRotated, tensorReference,
     ];
 
     const axisStroke = "#dc2626";
-    const displayAxisNames = [axisNames[1], axisNames[0], axisNames[2]];
+    const displayAxisNames = axisNames;
     const axisXEnd = projectLocal(2.35, 0, 0);
     const axisYEnd = projectLocal(0, 2.35, 0);
     const axisZEnd = projectLocal(0, 0, 2.35);
@@ -913,7 +943,7 @@ function ThreeDStressElementSVG({ basisReference, basisRotated, tensorReference,
         <line x1={panelCx} y1={panelCy} x2={axisZEnd.x} y2={axisZEnd.y} stroke={axisStroke} strokeWidth="3.4" markerEnd="url(#axis3-head)" />
         <text x={axisXEnd.x + 18} y={axisXEnd.y + 4} fontSize="20" fill={axisStroke}>{displayAxisNames[0]}</text>
         <text x={axisYEnd.x + 18} y={axisYEnd.y + 4} fontSize="20" fill={axisStroke}>{displayAxisNames[1]}</text>
-        <text x={axisZEnd.x + 18} y={axisZEnd.y + 4} fontSize="20" fill={axisStroke}>{displayAxisNames[2]}</text>
+        <text x={axisZEnd.x - 26} y={axisZEnd.y + 2} fontSize="20" fill={axisStroke}>{displayAxisNames[2]}</text>
 
         {faceConfigs.map((face, idx) => {
           const faceCenter = [0, 0, 0];
@@ -977,14 +1007,14 @@ function ThreeDStressElementSVG({ basisReference, basisRotated, tensorReference,
           </marker>
         </defs>
         <rect x="0" y="0" width={width} height={height} rx="20" fill="#ffffff" />
-        {renderPanel(280, 420, basisReference, tensorReference, "Original 3D stress cube", ["x", "y", "z"], false)}
+        {renderPanel(280, 420, basisReference, tensorReference, "Original 3D stress cube", ["y", "x", "z"], false)}
         {renderPanel(
           760,
           420,
           basisRotated,
           tensorRotated,
           `Rotated 3D stress cube (${formatSignedAngle(thetaDeg)})`,
-          ["x'", "y'", "z'"],
+          ["y'", "x'", "z'"],
           wrap180(Math.abs(thetaDeg)) > 5
         )}
       </svg>
@@ -1005,19 +1035,31 @@ export default function MohrCirclePlotter3D() {
   const [theta3D, setTheta3D] = useState(0);
   const [rotationSense2D, setRotationSense2D] = useState("ccw");
   const [rotationSense3D, setRotationSense3D] = useState("ccw");
-  const [viewAzim, setViewAzim] = useState(28);
-  const [viewElev, setViewElev] = useState(22);
+  const [viewAzim, setViewAzim] = useState(0);
+  const [viewElev, setViewElev] = useState(0);
 
-  const tensor = useMemo(
-    () => [
-      [stress.sx, stress.txy, stress.txz],
-      [stress.txy, stress.sy, stress.tyz],
-      [stress.txz, stress.tyz, stress.sz],
-    ],
+  const displayStress = useMemo(
+    () => ({
+      sx: stress.sy,
+      sy: stress.sx,
+      sz: stress.sz,
+      txy: stress.txy,
+      txz: stress.tyz,
+      tyz: stress.txz,
+    }),
     [stress]
   );
 
-  const mode = useMemo(() => detectMode(stress), [stress]);
+  const tensor = useMemo(
+    () => [
+      [displayStress.sx, displayStress.txy, displayStress.txz],
+      [displayStress.txy, displayStress.sy, displayStress.tyz],
+      [displayStress.txz, displayStress.tyz, displayStress.sz],
+    ],
+    [displayStress]
+  );
+
+  const mode = useMemo(() => detectMode(displayStress), [displayStress]);
   const principal3D = useMemo(() => eigenvaluesSymmetric3x3(tensor), [tensor]);
   const eigenbasis = useMemo(() => eigenbasisSymmetric3x3(tensor, principal3D), [tensor, principal3D]);
 
@@ -1031,12 +1073,17 @@ export default function MohrCirclePlotter3D() {
     return principalAngles2D(mode.a, mode.b, mode.tau);
   }, [mode]);
 
-  const signedTheta2D = rotationSense2D === "cw" ? -theta2D : theta2D;
+  const signedTheta2D = rotationSense2D === "cw" ? theta2D : -theta2D;
   const signedTheta3D = rotationSense3D === "cw" ? -theta3D : theta3D;
 
   const original2D = useMemo(() => {
     if (mode.type !== "2d") return null;
     return { sxp: mode.a, syp: mode.b, txpyp: mode.tau };
+  }, [mode]);
+
+  const mohrTauSign2D = useMemo(() => {
+    if (mode.type !== "2d") return 1;
+    return mohrShearSignForPlane(mode.plane);
   }, [mode]);
 
   const current2D = useMemo(() => {
@@ -1093,12 +1140,12 @@ export default function MohrCirclePlotter3D() {
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="grid grid-cols-2 gap-4">
-                <Field label="σx" value={stress.sx} onChange={(v) => setField("sx", v)} />
-                <Field label="σy" value={stress.sy} onChange={(v) => setField("sy", v)} />
+                <Field label="σx" value={stress.sy} onChange={(v) => setField("sy", v)} />
+                <Field label="σy" value={stress.sx} onChange={(v) => setField("sx", v)} />
                 <Field label="σz" value={stress.sz} onChange={(v) => setField("sz", v)} />
                 <Field label="τxy" value={stress.txy} onChange={(v) => setField("txy", v)} />
-                <Field label="τyz" value={stress.tyz} onChange={(v) => setField("tyz", v)} />
-                <Field label="τxz" value={stress.txz} onChange={(v) => setField("txz", v)} />
+                <Field label="τyz" value={stress.txz} onChange={(v) => setField("txz", v)} />
+                <Field label="τxz" value={stress.tyz} onChange={(v) => setField("tyz", v)} />
               </div>
 
               <div>
@@ -1117,9 +1164,7 @@ export default function MohrCirclePlotter3D() {
                 <div className="mt-2 text-lg font-semibold text-slate-900">
                   {mode.type === "2d" ? `2D Mohr circle in the ${mode.plane.toUpperCase()} plane` : "Full 3D Mohr circles"}
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  2D mode triggers automatically for XY when σz = τxz = τyz = 0, for XZ when σy = τxy = τyz = 0, and for YZ when σx = τxy = τxz = 0.
-                </p>
+
               </div>
 
               {mode.type === "2d" && angles2D ? (
@@ -1147,7 +1192,7 @@ export default function MohrCirclePlotter3D() {
               <div>
                 <div className="mb-2 text-sm font-medium text-slate-700">Stress tensor</div>
                 <TensorTable m={tensor} />
-                <p className="mt-2 text-xs text-slate-500">The tensor is treated as symmetric: τxy = τyx, τxz = τzx, τyz = τzy.</p>
+                <p className="mt-2 text-xs text-slate-500">Since this is a Cauchy stress tensor, it is symmetric by definition.</p>
               </div>
             </CardContent>
           </Card>
@@ -1168,9 +1213,7 @@ export default function MohrCirclePlotter3D() {
                   <div className="text-sm text-slate-500">σ3 direction</div>
                   <div className="font-mono text-sm">{formatVector(eigenbasis[2])}</div>
                 </div>
-                <div className="text-xs text-slate-500">
-                  The 3D explorer now shows the true original stress cube on the left using the entered tensor components, and the fully transformed stress cube on the right for the active rotated coordinate system. The Mohr circle view still follows the σ1–σ3 principal-plane exploration.
-                </div>
+                <div className="text-xs text-slate-500">The Mohr circle view only shows the σ1–σ3 principal-plane exploration.</div>
               </div>
             </div>
           ) : null}
@@ -1188,14 +1231,14 @@ export default function MohrCirclePlotter3D() {
               <div className="grid gap-6">
                 <div>
                   {mode.type === "2d" && plane2D ? (
-                    <TwoDMohrSVG labels={mode.labels} a={mode.a} b={mode.b} tau={mode.tau} thetaDeg={signedTheta2D} />
+                    <TwoDMohrSVG plane={mode.plane} labels={mode.labels} a={mode.a} b={mode.b} tau={mode.tau} thetaDeg={signedTheta2D} />
                   ) : (
                     <ThreeDMohrSVG sigma1={principal3D[0]} sigma2={principal3D[1]} sigma3={principal3D[2]} thetaDeg={signedTheta3D} />
                   )}
                 </div>
                 <div>
                   {mode.type === "2d" && current2D && original2D ? (
-                    <TwoDStressElementSVG axisNames={mode.axisNames} originalState={original2D} rotatedState={current2D} thetaDeg={signedTheta2D} />
+                    <TwoDStressElementSVG plane={mode.plane} axisNames={mode.axisNames} originalState={original2D} rotatedState={current2D} thetaDeg={signedTheta2D} />
                   ) : (
                     <ThreeDStressElementSVG
                       basisReference={basisReference3D}
@@ -1220,31 +1263,31 @@ export default function MohrCirclePlotter3D() {
               {mode.type === "2d" && plane2D && current2D ? (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <div className="rounded-2xl border bg-white p-4">
-                    <div className="text-sm text-slate-500">Original face point {mode.labels[0]}</div>
+                    <div className="text-sm text-slate-500">Original positive face point {mode.labels[0]}</div>
                     <div className="mt-2 space-y-1 text-sm">
                       <div><span className="font-medium">σ:</span> <span className="font-mono">{format(mode.a)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(mode.tau)}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(mohrTauSign2D * mode.tau)}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
-                    <div className="text-sm text-slate-500">Original face point {mode.labels[1]}</div>
+                    <div className="text-sm text-slate-500">Original positive face point {mode.labels[1]}</div>
                     <div className="mt-2 space-y-1 text-sm">
                       <div><span className="font-medium">σ:</span> <span className="font-mono">{format(mode.b)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(-mode.tau)}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(-mohrTauSign2D * mode.tau)}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
                     <div className="text-sm text-slate-500">Current rotated point {mode.labels[0]}'</div>
                     <div className="mt-2 space-y-1 text-sm">
                       <div><span className="font-medium">σ:</span> <span className="font-mono">{format(current2D.sxp)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(current2D.txpyp)}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(mohrTauSign2D * current2D.txpyp)}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
                     <div className="text-sm text-slate-500">Current rotated point {mode.labels[1]}'</div>
                     <div className="mt-2 space-y-1 text-sm">
                       <div><span className="font-medium">σ:</span> <span className="font-mono">{format(current2D.syp)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(-current2D.txpyp)}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(-mohrTauSign2D * current2D.txpyp)}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
