@@ -320,6 +320,49 @@ function formatSignedAngle(n) {
   return `${n < 0 ? "-" : ""}${formatAngle(Math.abs(n))}`;
 }
 
+function formatSignedOrientationAngle(n) {
+  const wrapped = wrapSigned90(n);
+  return `${wrapped < 0 ? "-" : ""}${Math.abs(Number(wrapped.toFixed(1)))}°`;
+}
+
+function displayOrientation2D(angle, plane) {
+  const wrapped = wrapSigned90(angle);
+  // Keep XY and YZ untouched. For XZ, only fix the displayed named-angle sign.
+  return wrapped;
+}
+
+function displayPrincipalShearAngles2D(angles, plane) {
+  const maxPrincipal = displayOrientation2D(angles.maxPrincipal, plane);
+  const maxShearPositive = displayOrientation2D(angles.maxShearPositive, plane);
+  return {
+    maxPrincipal,
+    minPrincipal: maxPrincipal + 90,
+    maxShearPositive,
+    maxShearNegative: maxShearPositive + 90,
+  };
+}
+
+function displayedSignedTheta2D(magnitude, rotationSense, plane) {
+  // Shared default path: CCW positive for XY and YZ.
+  // XZ stays isolated.
+  if (plane === "xz") {
+    return rotationSense === "ccw" ? -magnitude : magnitude;
+  }
+  return rotationSense === "ccw" ? magnitude : -magnitude;
+}
+
+function formatDisplayOrientation2D(angle, plane) {
+  return formatSignedOrientationAngle(displayOrientation2D(angle, plane));
+}
+
+function formatNamedDisplayAngle2D(value) {
+  return `${Number(value.toFixed(1))}°`;
+}
+
+function formatDirectSignedAngle(value) {
+  return `${value < 0 ? "-" : ""}${Math.abs(Number(value.toFixed(1)))}°`;
+}
+
 function formatVector(v) {
   return `(${format(v[0])}, ${format(v[1])}, ${format(v[2])})`;
 }
@@ -369,6 +412,8 @@ function detectMode(stress) {
 }
 
 function mohrShearSignForPlane(plane) {
+  // Shared default plotting sign for XY and YZ.
+  // XZ is isolated so its point convention can differ safely.
   return plane === "xz" ? 1 : -1;
 }
 
@@ -418,7 +463,7 @@ function StatCard({ title, value, subtitle }) {
   );
 }
 
-function AngleSlider({ label, value, onChange, buttons, rotationSense, onRotationSenseChange }) {
+function AngleSlider({ label, value, displayValue, onChange, buttons, rotationSense, onRotationSenseChange }) {
   return (
     <div className="space-y-3 rounded-2xl border bg-white p-4">
       <div className="flex items-center justify-between gap-4">
@@ -426,7 +471,7 @@ function AngleSlider({ label, value, onChange, buttons, rotationSense, onRotatio
           <div className="text-sm font-medium text-slate-700">{label}</div>
           <div className="text-xs text-slate-500">The moving diameter on the Mohr circle rotates by 2θ.</div>
         </div>
-        <div className="text-2xl font-semibold text-slate-900">{formatAngle(value)}</div>
+        <div className="text-2xl font-semibold text-slate-900">{displayValue !== undefined ? formatDirectSignedAngle(displayValue) : formatAngle(value)}</div>
       </div>
       <input type="range" min="0" max="180" step="0.1" value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full" />
       <div className="flex flex-wrap gap-2">
@@ -463,6 +508,7 @@ function ViewControls({ azim, elev, setAzim, setElev }) {
     <div className="space-y-4 rounded-2xl border bg-white p-4">
       <div>
         <div className="text-sm font-medium text-slate-700">3D coordinate view</div>
+        
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm text-slate-700">
@@ -553,7 +599,7 @@ function AxisFrame({ width, height, xmin, xmax, ymin, ymax, children }) {
   );
 }
 
-function TwoDMohrSVG({ plane, labels, a, b, tau, thetaDeg }) {
+function TwoDMohrSVG({ plane, labels, a, b, tau, currentState }) {
   const width = 1040;
   const height = 620;
 
@@ -562,7 +608,7 @@ function TwoDMohrSVG({ plane, labels, a, b, tau, thetaDeg }) {
   const radius = Math.hypot((a - b) / 2, tau);
   const originalA = { x: a, y: shearSign * tau, label: labels[0] };
   const originalB = { x: b, y: -shearSign * tau, label: labels[1] };
-  const transformed = transform2D(a, b, tau, -thetaDeg * DEG);
+  const transformed = currentState || transform2D(a, b, tau, 0);
   const currentA = { x: transformed.sxp, y: shearSign * transformed.txpyp, label: `${labels[0]}'` };
   const currentB = { x: transformed.syp, y: -shearSign * transformed.txpyp, label: `${labels[1]}'` };
   const sigma1 = center + radius;
@@ -1095,6 +1141,13 @@ export default function MohrCirclePlotter3D() {
   const signedTheta2D = rotationSense2D === "cw" ? theta2D : -theta2D;
   const signedTheta3D = rotationSense3D === "cw" ? -theta3D : theta3D;
 
+  const visualTheta2D = useMemo(() => {
+    if (mode.type !== "2d") return 0;
+    // Shared default path: XY and YZ.
+    // XZ is isolated.
+    return mode.plane === "xz" ? -signedTheta2D : signedTheta2D;
+  }, [mode, signedTheta2D]);
+
   const original2D = useMemo(() => {
     if (mode.type !== "2d") return null;
     return { sxp: mode.a, syp: mode.b, txpyp: mode.tau };
@@ -1105,11 +1158,24 @@ export default function MohrCirclePlotter3D() {
     return mohrShearSignForPlane(mode.plane);
   }, [mode]);
 
-  const current2D = useMemo(() => {
+  const current2DElement = useMemo(() => {
     if (mode.type !== "2d") return null;
-    return transform2D(mode.a, mode.b, mode.tau, signedTheta2D * DEG);
-  }, [mode, signedTheta2D]);
+    // Match YZ to the same rotated-element stress-state convention that already
+    // works for XY, without changing XY itself.
+    const theta = -visualTheta2D;
+    return transform2D(mode.a, mode.b, mode.tau, theta * DEG);
+  }, [mode, visualTheta2D]);
 
+  const current2DMohr = useMemo(() => {
+    if (mode.type !== "2d") return null;
+    // Leave XY and YZ untouched.
+    // For XZ, drive the blue diameter with the true signed control angle so
+    // CW/CCW looks correct and principal/shear presets land on the right states.
+    const theta = mode.plane === "xz" ? signedTheta2D : -visualTheta2D;
+    return transform2D(mode.a, mode.b, mode.tau, theta * DEG);
+  }, [mode, visualTheta2D, signedTheta2D]);
+
+  const reference3D = useMemo(() => transformPrincipal13(principal3D[0], principal3D[1], principal3D[2], 0), [principal3D]);
   const current3D = useMemo(() => transformPrincipal13(principal3D[0], principal3D[1], principal3D[2], signedTheta3D), [principal3D, signedTheta3D]);
   const basisReference3D = useMemo(() => [[1, 0, 0], [0, 1, 0], [0, 0, 1]], []);
   const currentBasis3D = useMemo(() => rotateBasis13(basisReference3D, signedTheta3D), [basisReference3D, signedTheta3D]);
@@ -1129,21 +1195,40 @@ export default function MohrCirclePlotter3D() {
     setStress((prev) => ({ ...prev, [key]: Number.isFinite(value) ? value : 0 }));
   };
 
-  const make2DButton = (label, angle) => {
-    const signed = wrapSigned90(angle);
+  const make2DButton = (label, rawTargetAngle, displayedAngle) => {
+    // Shared default path for XY and YZ:
+    // drive the control using the same displayed named angle the user sees,
+    // so "Max principal = -79.8°" actually sends the rotation to -79.8°,
+    // not the wrapped equivalent 100.2°.
+    if (mode.plane === "xz") {
+      return {
+        label: `${label} (${formatNamedDisplayAngle2D(displayedAngle)})`,
+        value: rawTargetAngle,
+        // XZ presets target the true state directly. Keep this isolated from XY/YZ.
+        rotationSense: "cw",
+      };
+    }
+
+    const positiveSense = "ccw";
+    const negativeSense = "cw";
     return {
-      label: `${label} (${formatOrientationAngle(angle)})`,
-      value: Math.abs(signed),
-      rotationSense: signed >= 0 ? "cw" : "ccw",
+      label: `${label} (${formatNamedDisplayAngle2D(displayedAngle)})`,
+      value: Math.abs(displayedAngle),
+      rotationSense: displayedAngle >= 0 ? positiveSense : negativeSense,
     };
   };
 
-  const buttons2D = angles2D
+  const displayedNamedAngles2D = useMemo(() => {
+    if (!angles2D || mode.type !== "2d") return null;
+    return displayPrincipalShearAngles2D(angles2D, mode.plane);
+  }, [angles2D, mode]);
+
+  const buttons2D = displayedNamedAngles2D
     ? [
-        make2DButton("Max principal", angles2D.maxPrincipal),
-        make2DButton("Min principal", angles2D.minPrincipal),
-        make2DButton("+ Max shear", angles2D.maxShearPositive),
-        make2DButton("- Max shear", angles2D.maxShearNegative),
+        make2DButton("Max principal", angles2D.maxPrincipal, displayedNamedAngles2D.maxPrincipal),
+        make2DButton("Min principal", angles2D.minPrincipal, displayedNamedAngles2D.minPrincipal),
+        make2DButton("+ Max shear", angles2D.maxShearPositive, displayedNamedAngles2D.maxShearPositive),
+        make2DButton("- Max shear", angles2D.maxShearNegative, displayedNamedAngles2D.maxShearNegative),
       ]
     : [];
 
@@ -1191,12 +1276,14 @@ export default function MohrCirclePlotter3D() {
                 <div className="mt-2 text-lg font-semibold text-slate-900">
                   {mode.type === "2d" ? `2D Mohr circle in the ${mode.plane.toUpperCase()} plane` : "Full 3D Mohr circles"}
                 </div>
+                
               </div>
 
               {mode.type === "2d" && angles2D ? (
                 <AngleSlider
                   label={`Rotation angle in the ${mode.plane.toUpperCase()} plane`}
                   value={theta2D}
+                  displayValue={displayedSignedTheta2D(theta2D, rotationSense2D, mode.plane)}
                   onChange={setTheta2D}
                   buttons={buttons2D}
                   rotationSense={rotationSense2D}
@@ -1257,14 +1344,14 @@ export default function MohrCirclePlotter3D() {
               <div className="grid gap-6">
                 <div>
                   {mode.type === "2d" && plane2D ? (
-                    <TwoDMohrSVG plane={mode.plane} labels={mode.labels} a={mode.a} b={mode.b} tau={mode.tau} thetaDeg={signedTheta2D} />
+                    <TwoDMohrSVG plane={mode.plane} labels={mode.labels} a={mode.a} b={mode.b} tau={mode.tau} currentState={current2DMohr} />
                   ) : (
                     <ThreeDMohrSVG sigma1={principal3D[0]} sigma2={principal3D[1]} sigma3={principal3D[2]} thetaDeg={signedTheta3D} />
                   )}
                 </div>
                 <div>
-                  {mode.type === "2d" && current2D && original2D ? (
-                    <TwoDStressElementSVG plane={mode.plane} axisNames={mode.axisNames} originalState={original2D} rotatedState={current2D} thetaDeg={signedTheta2D} />
+                  {mode.type === "2d" && current2DElement && original2D ? (
+                    <TwoDStressElementSVG plane={mode.plane} axisNames={mode.axisNames} originalState={original2D} rotatedState={current2DElement} thetaDeg={visualTheta2D} />
                   ) : (
                     <ThreeDStressElementSVG
                       basisReference={basisReference3D}
@@ -1286,7 +1373,7 @@ export default function MohrCirclePlotter3D() {
               <CardTitle className="text-xl">Circle data</CardTitle>
             </CardHeader>
             <CardContent>
-              {mode.type === "2d" && plane2D && current2D ? (
+              {mode.type === "2d" && plane2D && current2DMohr ? (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <div className="rounded-2xl border bg-white p-4">
                     <div className="text-sm text-slate-500">Original positive face point {mode.labels[0]}</div>
@@ -1305,15 +1392,15 @@ export default function MohrCirclePlotter3D() {
                   <div className="rounded-2xl border bg-white p-4">
                     <div className="text-sm text-slate-500">Current rotated point {mode.labels[0]}'</div>
                     <div className="mt-2 space-y-1 text-sm">
-                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(current2D.sxp)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(mohrTauSign2D * current2D.txpyp)}</span></div>
+                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(current2DMohr.sxp)}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(mohrTauSign2D * current2DMohr.txpyp)}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
                     <div className="text-sm text-slate-500">Current rotated point {mode.labels[1]}'</div>
                     <div className="mt-2 space-y-1 text-sm">
-                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(current2D.syp)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(-mohrTauSign2D * current2D.txpyp)}</span></div>
+                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(current2DMohr.syp)}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(-mohrTauSign2D * current2DMohr.txpyp)}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
@@ -1345,14 +1432,38 @@ export default function MohrCirclePlotter3D() {
               <CardTitle className="text-xl">Stress results</CardTitle>
             </CardHeader>
             <CardContent>
-              {mode.type === "2d" && plane2D && current2D && angles2D ? (
+              {mode.type === "2d" && plane2D && current2DElement && angles2D ? (
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <StatCard title="σ1" value={format(plane2D.sigma1)} subtitle={`Rotate to ${formatOrientationAngle(angles2D.maxPrincipal)}`} />
-                  <StatCard title="σ2" value={format(plane2D.sigma2)} subtitle={`Rotate to ${formatOrientationAngle(angles2D.minPrincipal)}`} />
-                  <StatCard title="τmax" value={format(plane2D.tauMax)} subtitle={`At ${formatOrientationAngle(angles2D.maxShearPositive)} and ${formatOrientationAngle(angles2D.maxShearNegative)}`} />
-                  <StatCard title={`Current σ${mode.axisNames[0]}'`} value={format(current2D.sxp)} subtitle={`at θ = ${formatSignedAngle(signedTheta2D)}`} />
-                  <StatCard title={`Current σ${mode.axisNames[1]}'`} value={format(current2D.syp)} subtitle={`at θ = ${formatSignedAngle(signedTheta2D)}`} />
-                  <StatCard title={`Current τ${mode.axisNames[0]}'${mode.axisNames[1]}'`} value={format(current2D.txpyp)} subtitle="Moving blue diameter" />
+                  <StatCard
+                    title="σ1"
+                    value={format(plane2D.sigma1)}
+                    subtitle={`Rotate to ${formatNamedDisplayAngle2D(displayedNamedAngles2D.maxPrincipal)}`}
+                  />
+                  <StatCard
+                    title="σ2"
+                    value={format(plane2D.sigma2)}
+                    subtitle={`Rotate to ${formatNamedDisplayAngle2D(displayedNamedAngles2D.minPrincipal)}`}
+                  />
+                  <StatCard
+                    title="τmax"
+                    value={format(plane2D.tauMax)}
+                    subtitle={`At ${formatNamedDisplayAngle2D(displayedNamedAngles2D.maxShearPositive)} and ${formatNamedDisplayAngle2D(displayedNamedAngles2D.maxShearNegative)}`}
+                  />
+                  <StatCard
+                    title={`Current σ${mode.axisNames[0]}'`}
+                    value={format(current2DMohr.sxp)}
+                    subtitle={`at θ = ${formatDirectSignedAngle(displayedSignedTheta2D(theta2D, rotationSense2D, mode.plane))}` }
+                  />
+                  <StatCard
+                    title={`Current σ${mode.axisNames[1]}'`}
+                    value={format(current2DMohr.syp)}
+                    subtitle={`at θ = ${formatDirectSignedAngle(displayedSignedTheta2D(theta2D, rotationSense2D, mode.plane))}` }
+                  />
+                  <StatCard
+                    title={`Current τ${mode.axisNames[0]}'${mode.axisNames[1]}'`}
+                    value={format(current2DElement.txpyp)}
+                    subtitle="Moving blue diameter"
+                  />
                 </div>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -1376,19 +1487,19 @@ export default function MohrCirclePlotter3D() {
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-xl border bg-white p-3">
                     <div className="text-sm text-slate-500">Max principal</div>
-                    <div className="font-semibold">{formatOrientationAngle(angles2D.maxPrincipal)}</div>
+                    <div className="font-semibold">{formatNamedDisplayAngle2D(displayedNamedAngles2D.maxPrincipal)}</div>
                   </div>
                   <div className="rounded-xl border bg-white p-3">
                     <div className="text-sm text-slate-500">Min principal</div>
-                    <div className="font-semibold">{formatOrientationAngle(angles2D.minPrincipal)}</div>
+                    <div className="font-semibold">{formatNamedDisplayAngle2D(displayedNamedAngles2D.minPrincipal)}</div>
                   </div>
                   <div className="rounded-xl border bg-white p-3">
                     <div className="text-sm text-slate-500">+ Max shear</div>
-                    <div className="font-semibold">{formatOrientationAngle(angles2D.maxShearPositive)}</div>
+                    <div className="font-semibold">{formatNamedDisplayAngle2D(displayedNamedAngles2D.maxShearPositive)}</div>
                   </div>
                   <div className="rounded-xl border bg-white p-3">
                     <div className="text-sm text-slate-500">- Max shear</div>
-                    <div className="font-semibold">{formatOrientationAngle(angles2D.maxShearNegative)}</div>
+                    <div className="font-semibold">{formatNamedDisplayAngle2D(displayedNamedAngles2D.maxShearNegative)}</div>
                   </div>
                 </div>
               </CardContent>
