@@ -306,6 +306,16 @@ function formatAngle(n) {
   return `${Number(wrap180(n).toFixed(1))}°`;
 }
 
+function wrapSigned90(deg) {
+  let out = ((deg + 90) % 180 + 180) % 180 - 90;
+  if (Math.abs(out - 90) < 1e-9) out = -90;
+  return out;
+}
+
+function formatOrientationAngle(n) {
+  return `${Number(wrapSigned90(n).toFixed(1))}°`;
+}
+
 function formatSignedAngle(n) {
   return `${n < 0 ? "-" : ""}${formatAngle(Math.abs(n))}`;
 }
@@ -429,7 +439,17 @@ function AngleSlider({ label, value, onChange, buttons, rotationSense, onRotatio
       </div>
       <div className="flex flex-wrap gap-2">
         {buttons.map((item) => (
-          <Button key={item.label} variant="outline" className="rounded-2xl" onClick={() => onChange(item.value)}>
+          <Button
+            key={item.label}
+            variant="outline"
+            className="rounded-2xl"
+            onClick={() => {
+              if (item.rotationSense && onRotationSenseChange) {
+                onRotationSenseChange(item.rotationSense);
+              }
+              onChange(item.value);
+            }}
+          >
             {item.label}
           </Button>
         ))}
@@ -443,7 +463,6 @@ function ViewControls({ azim, elev, setAzim, setElev }) {
     <div className="space-y-4 rounded-2xl border bg-white p-4">
       <div>
         <div className="text-sm font-medium text-slate-700">3D coordinate view</div>
-
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm text-slate-700">
@@ -1091,7 +1110,6 @@ export default function MohrCirclePlotter3D() {
     return transform2D(mode.a, mode.b, mode.tau, signedTheta2D * DEG);
   }, [mode, signedTheta2D]);
 
-  const reference3D = useMemo(() => transformPrincipal13(principal3D[0], principal3D[1], principal3D[2], 0), [principal3D]);
   const current3D = useMemo(() => transformPrincipal13(principal3D[0], principal3D[1], principal3D[2], signedTheta3D), [principal3D, signedTheta3D]);
   const basisReference3D = useMemo(() => [[1, 0, 0], [0, 1, 0], [0, 0, 1]], []);
   const currentBasis3D = useMemo(() => rotateBasis13(basisReference3D, signedTheta3D), [basisReference3D, signedTheta3D]);
@@ -1111,12 +1129,21 @@ export default function MohrCirclePlotter3D() {
     setStress((prev) => ({ ...prev, [key]: Number.isFinite(value) ? value : 0 }));
   };
 
+  const make2DButton = (label, angle) => {
+    const signed = wrapSigned90(angle);
+    return {
+      label: `${label} (${formatOrientationAngle(angle)})`,
+      value: Math.abs(signed),
+      rotationSense: signed >= 0 ? "cw" : "ccw",
+    };
+  };
+
   const buttons2D = angles2D
     ? [
-        { label: "Max principal", value: angles2D.maxPrincipal },
-        { label: "Min principal", value: angles2D.minPrincipal },
-        { label: "+ Max shear", value: angles2D.maxShearPositive },
-        { label: "- Max shear", value: angles2D.maxShearNegative },
+        make2DButton("Max principal", angles2D.maxPrincipal),
+        make2DButton("Min principal", angles2D.minPrincipal),
+        make2DButton("+ Max shear", angles2D.maxShearPositive),
+        make2DButton("- Max shear", angles2D.maxShearNegative),
       ]
     : [];
 
@@ -1164,7 +1191,6 @@ export default function MohrCirclePlotter3D() {
                 <div className="mt-2 text-lg font-semibold text-slate-900">
                   {mode.type === "2d" ? `2D Mohr circle in the ${mode.plane.toUpperCase()} plane` : "Full 3D Mohr circles"}
                 </div>
-
               </div>
 
               {mode.type === "2d" && angles2D ? (
@@ -1321,9 +1347,9 @@ export default function MohrCirclePlotter3D() {
             <CardContent>
               {mode.type === "2d" && plane2D && current2D && angles2D ? (
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <StatCard title="σ1" value={format(plane2D.sigma1)} subtitle={`Rotate to ${formatAngle(angles2D.maxPrincipal)}`} />
-                  <StatCard title="σ2" value={format(plane2D.sigma2)} subtitle={`Rotate to ${formatAngle(angles2D.minPrincipal)}`} />
-                  <StatCard title="τmax" value={format(plane2D.tauMax)} subtitle={`At ${formatAngle(angles2D.maxShearPositive)} and ${formatAngle(angles2D.maxShearNegative)}`} />
+                  <StatCard title="σ1" value={format(plane2D.sigma1)} subtitle={`Rotate to ${formatOrientationAngle(angles2D.maxPrincipal)}`} />
+                  <StatCard title="σ2" value={format(plane2D.sigma2)} subtitle={`Rotate to ${formatOrientationAngle(angles2D.minPrincipal)}`} />
+                  <StatCard title="τmax" value={format(plane2D.tauMax)} subtitle={`At ${formatOrientationAngle(angles2D.maxShearPositive)} and ${formatOrientationAngle(angles2D.maxShearNegative)}`} />
                   <StatCard title={`Current σ${mode.axisNames[0]}'`} value={format(current2D.sxp)} subtitle={`at θ = ${formatSignedAngle(signedTheta2D)}`} />
                   <StatCard title={`Current σ${mode.axisNames[1]}'`} value={format(current2D.syp)} subtitle={`at θ = ${formatSignedAngle(signedTheta2D)}`} />
                   <StatCard title={`Current τ${mode.axisNames[0]}'${mode.axisNames[1]}'`} value={format(current2D.txpyp)} subtitle="Moving blue diameter" />
@@ -1350,19 +1376,19 @@ export default function MohrCirclePlotter3D() {
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-xl border bg-white p-3">
                     <div className="text-sm text-slate-500">Max principal</div>
-                    <div className="font-semibold">{formatAngle(angles2D.maxPrincipal)}</div>
+                    <div className="font-semibold">{formatOrientationAngle(angles2D.maxPrincipal)}</div>
                   </div>
                   <div className="rounded-xl border bg-white p-3">
                     <div className="text-sm text-slate-500">Min principal</div>
-                    <div className="font-semibold">{formatAngle(angles2D.minPrincipal)}</div>
+                    <div className="font-semibold">{formatOrientationAngle(angles2D.minPrincipal)}</div>
                   </div>
                   <div className="rounded-xl border bg-white p-3">
                     <div className="text-sm text-slate-500">+ Max shear</div>
-                    <div className="font-semibold">{formatAngle(angles2D.maxShearPositive)}</div>
+                    <div className="font-semibold">{formatOrientationAngle(angles2D.maxShearPositive)}</div>
                   </div>
                   <div className="rounded-xl border bg-white p-3">
                     <div className="text-sm text-slate-500">- Max shear</div>
-                    <div className="font-semibold">{formatAngle(angles2D.maxShearNegative)}</div>
+                    <div className="font-semibold">{formatOrientationAngle(angles2D.maxShearNegative)}</div>
                   </div>
                 </div>
               </CardContent>
