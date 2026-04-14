@@ -575,7 +575,7 @@ function AxisFrame({ width, height, xmin, xmax, ymin, ymax, children }) {
           <g key={`y-${t}`}>
             <line x1={mapX(xmin)} x2={mapX(xmax)} y1={mapY(t)} y2={mapY(t)} stroke="#e2e8f0" strokeWidth="1" />
             <text x={46} y={mapY(t) + 4} textAnchor="start" fontSize="12" fill="#475569">
-              {format(t)}
+              {format(-t)}
             </text>
           </g>
         ))}
@@ -1198,11 +1198,13 @@ export default function MohrCirclePlotter3D() {
     // so "Max principal = -79.8°" actually sends the rotation to -79.8°,
     // not the wrapped equivalent 100.2°.
     if (mode.plane === "xz") {
+      // Mirror the working XY/YZ preset behavior, but keep it isolated to XZ.
+      const positiveSense = "ccw";
+      const negativeSense = "cw";
       return {
         label: `${label} (${formatNamedDisplayAngle2D(displayedAngle)})`,
-        value: rawTargetAngle,
-        // XZ presets target the true state directly. Keep this isolated from XY/YZ.
-        rotationSense: "cw",
+        value: Math.abs(displayedAngle),
+        rotationSense: displayedAngle >= 0 ? positiveSense : negativeSense,
       };
     }
 
