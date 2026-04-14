@@ -219,8 +219,8 @@ function principalAngles2D(a, b, tau) {
   return {
     maxPrincipal: theta,
     minPrincipal: wrap180(theta + 90),
-    maxShearPositive: wrap180(theta + 45),
-    maxShearNegative: wrap180(theta + 135),
+    maxShearPositive: wrap180(theta - 45),
+    maxShearNegative: wrap180(theta + 45),
   };
 }
 
@@ -327,8 +327,8 @@ function formatSignedOrientationAngle(n) {
 
 function displayOrientation2D(angle, plane) {
   const wrapped = wrapSigned90(angle);
-  // Keep XY and YZ untouched. For XZ, only fix the displayed named-angle sign.
-  return wrapped;
+  // Keep XY and YZ untouched. For XZ, the displayed named-angle sign is opposite.
+  return plane === "xz" ? -wrapped : wrapped;
 }
 
 function displayPrincipalShearAngles2D(angles, plane) {
@@ -343,11 +343,8 @@ function displayPrincipalShearAngles2D(angles, plane) {
 }
 
 function displayedSignedTheta2D(magnitude, rotationSense, plane) {
-  // Shared default path: CCW positive for XY and YZ.
-  // XZ stays isolated.
-  if (plane === "xz") {
-    return rotationSense === "ccw" ? -magnitude : magnitude;
-  }
+  // User-facing angle values: CCW positive, CW negative.
+  // This now applies to XZ as well, without changing the actual XZ motion logic.
   return rotationSense === "ccw" ? magnitude : -magnitude;
 }
 
