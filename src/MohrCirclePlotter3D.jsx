@@ -337,12 +337,14 @@ function displayOrientation2D(angle, plane) {
 
 function displayPrincipalShearAngles2D(angles, plane) {
   const maxPrincipal = displayOrientation2D(angles.maxPrincipal, plane);
-  const maxShearPositive = displayOrientation2D(angles.maxShearPositive, plane);
+  const minPrincipal = wrapSigned90(displayOrientation2D(angles.minPrincipal, plane));
+  const maxShearPositive = wrapSigned90(displayOrientation2D(angles.maxShearPositive, plane));
+  const maxShearNegative = wrapSigned90(displayOrientation2D(angles.maxShearNegative, plane));
   return {
-    maxPrincipal,
-    minPrincipal: maxPrincipal + 90,
+    maxPrincipal: wrapSigned90(maxPrincipal),
+    minPrincipal,
     maxShearPositive,
-    maxShearNegative: maxShearPositive + 90,
+    maxShearNegative,
   };
 }
 
