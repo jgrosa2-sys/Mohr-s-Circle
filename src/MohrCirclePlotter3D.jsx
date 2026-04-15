@@ -302,6 +302,10 @@ function format(n) {
   return n.toFixed(1);
 }
 
+function displayCurrentPointValue(n) {
+  return Math.abs(n) < 1e-12 ? 0 : n;
+}
+
 function formatAngle(n) {
   return `${Number(wrap180(n).toFixed(1))}°`;
 }
@@ -1172,6 +1176,26 @@ export default function MohrCirclePlotter3D() {
     return transform2D(mode.a, mode.b, mode.tau, theta * DEG);
   }, [mode, visualTheta2D, signedTheta2D]);
 
+  const circleData2D = useMemo(() => {
+    if (mode.type !== "2d" || !current2DMohr) return null;
+
+    const shearSign = mohrShearSignForPlane(mode.plane);
+    const originalA = { sigma: mode.a, tau: -(shearSign * mode.tau), label: mode.labels[0] };
+    const originalB = { sigma: mode.b, tau: -(-shearSign * mode.tau), label: mode.labels[1] };
+    const currentA = {
+      sigma: current2DMohr.sxp,
+      tau: -(shearSign * current2DMohr.txpyp),
+      label: `${mode.labels[0]}'`,
+    };
+    const currentB = {
+      sigma: current2DMohr.syp,
+      tau: -(-shearSign * current2DMohr.txpyp),
+      label: `${mode.labels[1]}'`,
+    };
+
+    return { originalA, originalB, currentA, currentB };
+  }, [mode, current2DMohr]);
+
   const reference3D = useMemo(() => transformPrincipal13(principal3D[0], principal3D[1], principal3D[2], 0), [principal3D]);
   const current3D = useMemo(() => transformPrincipal13(principal3D[0], principal3D[1], principal3D[2], signedTheta3D), [principal3D, signedTheta3D]);
   const basisReference3D = useMemo(() => [[1, 0, 0], [0, 1, 0], [0, 0, 1]], []);
@@ -1224,8 +1248,8 @@ export default function MohrCirclePlotter3D() {
 
   const buttons2D = displayedNamedAngles2D
     ? [
-        make2DButton("Max principal", angles2D.maxPrincipal, displayedNamedAngles2D.maxPrincipal),
-        make2DButton("Min principal", angles2D.minPrincipal, displayedNamedAngles2D.minPrincipal),
+        make2DButton("σ1 - Max principal", angles2D.maxPrincipal, displayedNamedAngles2D.maxPrincipal),
+        make2DButton("σ2 - Min principal", angles2D.minPrincipal, displayedNamedAngles2D.minPrincipal),
         make2DButton("+ Max shear", angles2D.maxShearPositive, displayedNamedAngles2D.maxShearPositive),
         make2DButton("- Max shear", angles2D.maxShearNegative, displayedNamedAngles2D.maxShearNegative),
       ]
@@ -1372,34 +1396,34 @@ export default function MohrCirclePlotter3D() {
               <CardTitle className="text-xl">Circle data</CardTitle>
             </CardHeader>
             <CardContent>
-              {mode.type === "2d" && plane2D && current2DMohr ? (
+              {mode.type === "2d" && plane2D && current2DMohr && circleData2D ? (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <div className="rounded-2xl border bg-white p-4">
-                    <div className="text-sm text-slate-500">Original positive face point {mode.labels[0]}</div>
+                    <div className="text-sm text-slate-500">Original positive face point {circleData2D.originalA.label}</div>
                     <div className="mt-2 space-y-1 text-sm">
-                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(mode.a)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(mohrTauSign2D * mode.tau)}</span></div>
+                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(circleData2D.originalA.sigma)}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(circleData2D.originalA.tau)}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
-                    <div className="text-sm text-slate-500">Original positive face point {mode.labels[1]}</div>
+                    <div className="text-sm text-slate-500">Original positive face point {circleData2D.originalB.label}</div>
                     <div className="mt-2 space-y-1 text-sm">
-                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(mode.b)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(-mohrTauSign2D * mode.tau)}</span></div>
+                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(circleData2D.originalB.sigma)}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(circleData2D.originalB.tau)}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
-                    <div className="text-sm text-slate-500">Current rotated point {mode.labels[0]}'</div>
+                    <div className="text-sm text-slate-500">Current rotated point {circleData2D.currentA.label}</div>
                     <div className="mt-2 space-y-1 text-sm">
-                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(current2DMohr.sxp)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(mohrTauSign2D * current2DMohr.txpyp)}</span></div>
+                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(displayCurrentPointValue(circleData2D.currentA.sigma))}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(displayCurrentPointValue(circleData2D.currentA.tau))}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
-                    <div className="text-sm text-slate-500">Current rotated point {mode.labels[1]}'</div>
+                    <div className="text-sm text-slate-500">Current rotated point {circleData2D.currentB.label}</div>
                     <div className="mt-2 space-y-1 text-sm">
-                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(current2DMohr.syp)}</span></div>
-                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(-mohrTauSign2D * current2DMohr.txpyp)}</span></div>
+                      <div><span className="font-medium">σ:</span> <span className="font-mono">{format(displayCurrentPointValue(circleData2D.currentB.sigma))}</span></div>
+                      <div><span className="font-medium">τ:</span> <span className="font-mono">{format(displayCurrentPointValue(circleData2D.currentB.tau))}</span></div>
                     </div>
                   </div>
                   <div className="rounded-2xl border bg-white p-4">
@@ -1485,11 +1509,11 @@ export default function MohrCirclePlotter3D() {
               <CardContent>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-xl border bg-white p-3">
-                    <div className="text-sm text-slate-500">Max principal</div>
+                    <div className="text-sm text-slate-500">σ1 - Max principal</div>
                     <div className="font-semibold">{formatNamedDisplayAngle2D(displayedNamedAngles2D.maxPrincipal)}</div>
                   </div>
                   <div className="rounded-xl border bg-white p-3">
-                    <div className="text-sm text-slate-500">Min principal</div>
+                    <div className="text-sm text-slate-500">σ2 - Min principal</div>
                     <div className="font-semibold">{formatNamedDisplayAngle2D(displayedNamedAngles2D.minPrincipal)}</div>
                   </div>
                   <div className="rounded-xl border bg-white p-3">
