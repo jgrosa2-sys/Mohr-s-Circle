@@ -1079,7 +1079,7 @@ function ThreeDStressElementSVG({ basisReference, basisRotated, tensorReference,
           420,
           basisRotated,
           tensorRotated,
-          `Rotated 3D stress cube (${formatSignedAngle(thetaDeg)})`,
+          `Rotated 3D stress cube`,
           ["y'", "x'", "z'"],
           wrap180(Math.abs(thetaDeg)) > 5
         )}
@@ -1317,6 +1317,7 @@ export default function MohrCirclePlotter3D() {
                 <AngleSlider
                   label="Rotation in the principal 1–3 plane"
                   value={theta3D}
+                  displayValue={rotationSense3D === "cw" ? -theta3D : theta3D}
                   onChange={setTheta3D}
                   buttons={buttons3D}
                   rotationSense={rotationSense3D}
