@@ -1197,6 +1197,7 @@ export default function MohrCirclePlotter3D() {
   }, [mode, current2DMohr]);
 
   const reference3D = useMemo(() => transformPrincipal13(principal3D[0], principal3D[1], principal3D[2], 0), [principal3D]);
+  const mohrTheta3D = -signedTheta3D;
   const current3D = useMemo(() => transformPrincipal13(principal3D[0], principal3D[1], principal3D[2], signedTheta3D), [principal3D, signedTheta3D]);
   const basisReference3D = useMemo(() => [[1, 0, 0], [0, 1, 0], [0, 0, 1]], []);
   const currentBasis3D = useMemo(() => rotateBasis13(basisReference3D, signedTheta3D), [basisReference3D, signedTheta3D]);
@@ -1369,7 +1370,7 @@ export default function MohrCirclePlotter3D() {
                   {mode.type === "2d" && plane2D ? (
                     <TwoDMohrSVG plane={mode.plane} labels={mode.labels} a={mode.a} b={mode.b} tau={mode.tau} currentState={current2DMohr} />
                   ) : (
-                    <ThreeDMohrSVG sigma1={principal3D[0]} sigma2={principal3D[1]} sigma3={principal3D[2]} thetaDeg={signedTheta3D} />
+                    <ThreeDMohrSVG sigma1={principal3D[0]} sigma2={principal3D[1]} sigma3={principal3D[2]} thetaDeg={mohrTheta3D} />
                   )}
                 </div>
                 <div>
@@ -1485,7 +1486,7 @@ export default function MohrCirclePlotter3D() {
                   <StatCard
                     title={`Current τ${mode.axisNames[0]}'${mode.axisNames[1]}'`}
                     value={format(current2DElement.txpyp)}
-                    subtitle="Moving blue diameter"
+                    subtitle={`at θ = ${formatDirectSignedAngle(displayedSignedTheta2D(theta2D, rotationSense2D, mode.plane))}`}
                   />
                 </div>
               ) : (
@@ -1495,7 +1496,7 @@ export default function MohrCirclePlotter3D() {
                   <StatCard title="σ3" value={format(principal3D[2])} subtitle="Minimum principal stress" />
                   <StatCard title="τmax" value={format(Math.abs(principal3D[0] - principal3D[2]) / 2)} subtitle="Largest circle: (σ1 − σ3) / 2" />
                   <StatCard title="Current σx'" value={format(current3D.sxp)} subtitle={`θ₁₃ = ${formatSignedAngle(signedTheta3D)}`} />
-                  <StatCard title="Current τx'z'" value={format(current3D.txpzp)} subtitle="Moving blue diameter on σ1–σ3 circle" />
+                  <StatCard title="Current τx'z'" value={format(current3D.txpzp)} subtitle={`θ₁₃ = ${formatSignedAngle(signedTheta3D)}`} />
                 </div>
               )}
             </CardContent>
